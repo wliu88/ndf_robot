@@ -191,6 +191,7 @@ class NDFAlignmentCheck:
         # now randomly initialize a copy of the query points
         opt_query_pts = torch.from_numpy(query_pts).float().to(self.dev)
         opt_query_pts = opt_query_pts[:self.n_opt_pts][None, :, :].repeat((M, 1, 1))
+        # X: [M, self.n_opt_pts, 3]
         X = torch_util.transform_pcd_torch(opt_query_pts, rand_mat_init)
 
         opt_model_input = {}
@@ -216,6 +217,24 @@ class NDFAlignmentCheck:
             noise_vec = (torch.randn(X.size()) * (self.perturb_scale / ((i+1)**(self.perturb_decay)))).to(self.dev)
             X_perturbed = X + noise_vec
             X_new = torch_util.transform_pcd_torch(X_perturbed, T_mat) + trans[:, None, :].repeat((1, X.size(1), 1))
+
+            # visualize
+            # print(T_mat.shape) # 10, 4, 4
+            # print(trans.shape) # 10, 3
+            # print(rand_mat_init.shape) # 10, 4, 4
+            # add object
+            scene = add_object(self.pcd2, (255, 0, 0), scene=None, show=False)
+            # add initial query cloud
+            scene = add_object(X[0, :].cpu().numpy(), (0, 255, 0), scene=scene, show=False)
+            # add initial random transformation
+            scene = add_frame(rand_mat_init[0].cpu().detach().numpy(), scene=scene, show=False)
+            # add transformed query cloud
+            scene = add_object(X_new[0, :].cpu().detach().numpy(), (0, 0, 255), scene=scene, show=False)
+            # add query transformation
+            temp_transform = T_mat
+            temp_transform[:,:3, 3] = temp_transform[:,:3, 3] + trans
+            scene = add_frame(temp_transform[0].cpu().detach().numpy(), scene=scene, show=False)
+            scene.show()
 
             ######################### stuff for visualizing the reconstruction ##################33
 
@@ -247,6 +266,7 @@ class NDFAlignmentCheck:
                 in_pts = eval_pts[in_inds]
                 out_pts = eval_pts[out_inds]
                 if self.trimesh_viz:
+                    input("next?")
                     scene = trimesh_util.trimesh_show([in_pts])
                     in_scene = trimesh_util.trimesh_show([in_pts, shape_np])
                 self._cam_frame_scene_dict()
@@ -336,9 +356,9 @@ class NDFAlignmentCheck:
 
         best_scene = None
         if self.trimesh_viz:
-            local_frame_1 = trimesh.creation.axis(origin_size=0.002, transform=frame1_tf, origin_color=None, axis_radius=None, axis_length=0.03)
-            local_frame_2 = trimesh.creation.axis(origin_size=0.002, transform=rand_mat_np, origin_color=None, axis_radius=None, axis_length=0.03)
-            local_frame_3 = trimesh.creation.axis(origin_size=0.002, transform=frame2_tf, origin_color=None, axis_radius=None, axis_length=0.03)
+            local_frame_1 = trimesh.creation.axis(origin_size=0.002, transform=frame1_tf, origin_color=None, axis_radius=0.002, axis_length=0.05)
+            local_frame_2 = trimesh.creation.axis(origin_size=0.002, transform=rand_mat_np, origin_color=None, axis_radius=0.002, axis_length=0.05)
+            local_frame_3 = trimesh.creation.axis(origin_size=0.002, transform=frame2_tf, origin_color=None, axis_radius=0.002, axis_length=0.05)
              
             best_scene = trimesh_util.trimesh_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], show=False)
             best_scene.add_geometry([local_frame_1, local_frame_2, local_frame_3])
@@ -381,3 +401,24 @@ class NDFAlignmentCheck:
                     scene.show()
         if return_scene:
             return best_scene
+
+
+def add_object(pcd, color, scene=None, show=False):
+    if scene is None:
+        scene = trimesh.Scene()
+    tpcd = trimesh.PointCloud(pcd)
+    tpcd.colors = np.tile(color, (tpcd.vertices.shape[0], 1))
+    scene.add_geometry([tpcd])
+    if show:
+        scene.show()
+    return scene
+
+
+def add_frame(transform, scene=None, show=False):
+    if scene is None:
+        scene = trimesh.Scene()
+    frame = trimesh.creation.axis(origin_size=0.002, transform=transform, origin_color=None, axis_radius=None, axis_length=0.03)
+    scene.add_geometry([frame])
+    if show:
+        scene.show()
+    return scene

@@ -11,13 +11,16 @@ from ndf_robot.utils import path_util
 import ndf_robot.model.vnn_occupancy_net_pointnet_dgcnn as vnn_occupancy_network
 from ndf_robot.eval.ndf_alignment import NDFAlignmentCheck
 
+import os
+os.environ["NDF_SOURCE_DIR"] = ".."
+os.environ["PB_PLANNING_SOURCE_DIR"] = "../../pybullet-planning"
 
 if __name__ == '__main__':
     parser  = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--show_recon', action='store_true')
+    parser.add_argument('--show_recon', action='store_false')
     parser.add_argument('--sigma', type=float, default=0.025)
-    parser.add_argument('--visualize', action='store_true')
+    parser.add_argument('--visualize', action='store_false')
     parser.add_argument('--video', action='store_true')
     args = parser.parse_args()
 
@@ -27,9 +30,13 @@ if __name__ == '__main__':
     torch.random.manual_seed(seed)
 
     # see the demo object descriptions folder for other object models you can try
-    obj_model1 = osp.join(path_util.get_ndf_demo_obj_descriptions(), 'mug_centered_obj_normalized/28f1e7bc572a633cb9946438ed40eeb9/models/model_normalized.obj')
-    obj_model2 = osp.join(path_util.get_ndf_demo_obj_descriptions(), 'mug_centered_obj_normalized/586e67c53f181dc22adf8abaa25e0215/models/model_normalized.obj')
-    model_path = osp.join(path_util.get_ndf_model_weights(), 'ndf_demo_mug_weights.pth')  
+    # obj_model1 = osp.join(path_util.get_ndf_demo_obj_descriptions(), 'mug_centered_obj_normalized/1a1c0a8d4bad82169f0594e65f756cf5/models/model_normalized.obj')
+    # obj_model2 = osp.join(path_util.get_ndf_demo_obj_descriptions(), 'mug_centered_obj_normalized/1a97f3c83016abca21d0de04f408950f/models/model_normalized.obj')
+    # model_path = osp.join(path_util.get_ndf_model_weights(), 'ndf_demo_mug_weights.pth')
+    # obj_model1 = osp.join(path_util.get_ndf_obj_descriptions(), 'mug_centered_obj_normalized/2d10421716b16580e45ef4135c266a12/models/model_normalized.obj')
+    obj_model1 = osp.join(path_util.get_ndf_demo_obj_descriptions(), 'mug_centered_obj_normalized/1a1c0a8d4bad82169f0594e65f756cf5/models/model_normalized.obj')
+    obj_model2 = osp.join(path_util.get_ndf_obj_descriptions(), 'bottle_centered_obj_normalized/1b64b36bf7ddae3d7ad11050da24bb12/models/model_normalized.obj')
+    model_path = osp.join(path_util.get_ndf_model_weights(), 'multi_category_weights.pth')
 
     scale1 = 0.25
     scale2 = 0.4

@@ -14,6 +14,7 @@ obj_class = 'mug'
 #obj_class = 'bowl'
 #obj_class = 'bottle'
 
+
 if __name__ == "__main__":
     if obj_class == 'mug':
         # For mugs
