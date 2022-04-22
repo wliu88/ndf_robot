@@ -12,7 +12,7 @@ from ndf_robot.utils import path_util, geometry
 
 
 class JointOccTrainDataset(Dataset):
-    def __init__(self, sidelength, depth_aug=False, multiview_aug=False, phase='train', obj_class='all'):
+    def __init__(self, sidelength, depth_aug=False, multiview_aug=False, phase='train', obj_class='all', mini=False):
 
         # Path setup (change to folder where your training data is kept)
         ## these are the names of the full dataset folders
@@ -21,9 +21,14 @@ class JointOccTrainDataset(Dataset):
         # bowl_path = osp.join(path_util.get_ndf_data(), 'training/bowl_table_all_pose_4_cam_half_occ_full_rand_scale')
 
         ## these are the names of the mini-dataset folders, to ensure everything is up and running
-        mug_path = osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/test_mug')
-        bottle_path = osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/test_bottle')
-        bowl_path = osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/test_bowl')
+        if not mini:
+            mug_path = osp.join("/home/weiyu/data_drive/ndf_data/data", 'training_data/mug_table_all_pose_4_cam_half_occ_full_rand_scale')
+            bottle_path = osp.join("/home/weiyu/data_drive/ndf_data/data", 'training_data/bottle_table_all_pose_4_cam_half_occ_full_rand_scale')
+            bowl_path = osp.join("/home/weiyu/data_drive/ndf_data/data", 'training_data/bowl_table_all_pose_4_cam_half_occ_full_rand_scale')
+        else:
+            mug_path = osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/test_mug')
+            bottle_path = osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/test_bottle')
+            bowl_path = osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/test_bowl')
 
         if obj_class == 'all':
             paths = [mug_path, bottle_path, bowl_path]
@@ -66,9 +71,14 @@ class JointOccTrainDataset(Dataset):
         # self.shapenet_mug_dict = pickle.load(open(osp.join(path_util.get_ndf_data(), 'training_data/occ_shapenet_mug.p'), 'rb'))
         # self.shapenet_bowl_dict = pickle.load(open(osp.join(path_util.get_ndf_data(), 'training_data/occ_shapenet_bowl.p'), "rb"))
         # self.shapenet_bottle_dict = pickle.load(open(osp.join(path_util.get_ndf_data(), 'training_data/occ_shapenet_bottle.p'), "rb"))
-        self.shapenet_mug_dict = pickle.load(open(osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/occ_shapenet_mug.p'), 'rb'))
-        self.shapenet_bowl_dict = pickle.load(open(osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/occ_shapenet_bowl.p'), "rb"))
-        self.shapenet_bottle_dict = pickle.load(open(osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/occ_shapenet_bottle.p'), "rb"))
+        if not mini:
+            self.shapenet_mug_dict = pickle.load(open(osp.join("/home/weiyu/data_drive/ndf_data/data", 'training_data/occ_shapenet_mug.p'), 'rb'))
+            self.shapenet_bowl_dict = pickle.load(open(osp.join("/home/weiyu/data_drive/ndf_data/data", 'training_data/occ_shapenet_bowl.p'), "rb"))
+            self.shapenet_bottle_dict = pickle.load(open(osp.join("/home/weiyu/data_drive/ndf_data/data", 'training_data/occ_shapenet_bottle.p'), "rb"))
+        else:
+            self.shapenet_mug_dict = pickle.load(open(osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/occ_shapenet_mug.p'), 'rb'))
+            self.shapenet_bowl_dict = pickle.load(open(osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/occ_shapenet_bowl.p'), "rb"))
+            self.shapenet_bottle_dict = pickle.load(open(osp.join("/home/weiyu/data_drive/ndf_data/mini_data", 'training_data/occ_shapenet_bottle.p'), "rb"))
 
         self.shapenet_dict = {'03797390': self.shapenet_mug_dict, '02880940': self.shapenet_bowl_dict, '02876657': self.shapenet_bottle_dict}
 
@@ -234,8 +244,11 @@ class JointOccTrainDataset(Dataset):
             # print(sum(labels > 0))
             # print(sum(labels < 0))
             # recon_pc = coord[labels.squeeze() > 0, :]
-            # tp = trimesh.PointCloud(recon_pc)
-            # tp.show()
+            # recon_pc = trimesh.PointCloud(recon_pc)
+            # obs_pc = trimesh.PointCloud(point_cloud)
+            # obs_pc.colors = np.tile((255, 0, 0, 255), (obs_pc.vertices.shape[0], 1))
+            # trimesh.Scene([recon_pc, obs_pc]).show()
+
 
             # at the end we have 3D point cloud observation from depth images, voxel occupancy values and corresponding voxel coordinates
             res = {'point_cloud': point_cloud.float(),
@@ -276,23 +289,25 @@ if __name__ == "__main__":
 
     from torch.utils.data import DataLoader
 
-    train_dataset = JointOccTrainDataset(128, obj_class="bowl")
+    train_dataset = JointOccTrainDataset(128, obj_class="bowl", mini=True)
 
-    # for d in train_dataset:
-    #     input_d, output_d= d
+    for d in train_dataset:
+        input_d, output_d= d
+        for k in input_d:
+            print(k, input_d[k].shape)
+            print(input_d[k])
+        for k in output_d:
+            print(k, output_d[k].shape)
+            print(output_d[k])
+        input("next?")
+
+    # train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True,
+    #                               drop_last=True, num_workers=4)
+    #
+    # for d in train_dataloader:
+    #     input_d, output_d = d
     #     for k in input_d:
     #         print(k, input_d[k].shape)
     #     for k in output_d:
     #         print(k, output_d[k].shape)
     #     input("next?")
-
-    train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True,
-                                  drop_last=True, num_workers=4)
-
-    for d in train_dataloader:
-        input_d, output_d = d
-        for k in input_d:
-            print(k, input_d[k].shape)
-        for k in output_d:
-            print(k, output_d[k].shape)
-        input("next?")
