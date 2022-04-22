@@ -98,8 +98,7 @@ class NDFClassifier(pl.LightningModule):
         y_hat = self.layers(reference_act_hat)
         loss = self.loss(y_hat, y)
         self.log("val_loss", loss, prog_bar=True)
-        print(f"prediction: {torch.sigmoid(y_hat).item()}")
-        print("gt:", y.item())
+        print(f"\nprediction: {torch.sigmoid(y_hat).item()}, gt: {y.item()}")
         # input("next?")
 
     def configure_optimizers(self):
@@ -107,25 +106,51 @@ class NDFClassifier(pl.LightningModule):
         return optimizer
 
 
-def train_mlp():
+def train_mlp(mode, random_seed=42, checkpoint_path=None, max_epochs=5):
+
     device = (
         torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     )
 
-    model_path = osp.join(
-        path_util.get_ndf_model_weights(), "multi_category_weights.pth"
-    )
+    if mode == "train":
 
-    train_obj_models, val_obj_models = split_objects(train_ratio=0.8)
-    train_dataset = SemanticPoseDataset(train_obj_models, debug=False, semantic_type="top")
-    val_dataset = SemanticPoseDataset(val_obj_models, debug=True, semantic_type="top")
+        pl.seed_everything(random_seed)
+        train_obj_models, val_obj_models = split_objects(train_ratio=0.8)
+        print(train_obj_models)
+        print(val_obj_models)
+        train_dataset = SemanticPoseDataset(train_obj_models, debug=False, semantic_type="top")
 
-    pl.seed_everything(42)
-    mlp = NDFClassifier(model_path=model_path)
+        model_path = osp.join(path_util.get_ndf_model_weights(), "multi_category_weights.pth")
+        mlp = NDFClassifier(model_path=model_path)
 
-    trainer = pl.Trainer(gpus=1, deterministic=True, max_epochs=5)
-    trainer.fit(mlp, train_dataloaders=DataLoader(train_dataset, batch_size=8))
-    trainer.validate(dataloaders=DataLoader(val_dataset, batch_size=1))
+        trainer = pl.Trainer(gpus=1, deterministic=True, max_epochs=max_epochs)
+        trainer.fit(mlp, train_dataloaders=DataLoader(train_dataset, batch_size=8))
+        # trainer.validate(dataloaders=DataLoader(val_dataset, batch_size=1))
+
+    elif mode == "valid":
+
+        assert os.path.exists(checkpoint_path), "checkpoint path {} not valid".format(checkpoint_path)
+
+        pl.seed_everything(random_seed)
+        train_obj_models, val_obj_models = split_objects(train_ratio=0.8)
+        print(train_obj_models)
+        print(val_obj_models)
+        val_dataset = SemanticPoseDataset(val_obj_models, debug=False, semantic_type="top", valid_mode=True)
+
+        model_path = osp.join(path_util.get_ndf_model_weights(), "multi_category_weights.pth")
+        model = NDFClassifier.load_from_checkpoint(checkpoint_path, model_path=model_path)
+
+        # trainer = pl.Trainer(gpus=1, deterministic=True, max_epochs=max_epochs)
+        # trainer.validate(model=model, dataloaders=DataLoader(val_dataset, batch_size=1))
+        model.to(device)
+        model.eval()
+        for x, y, scene in val_dataset:
+            for k in x:
+                x[k] = x[k].to(device).unsqueeze(0)
+            with torch.no_grad():
+                y_hat = model(x)
+            print(f"\nprediction: {torch.sigmoid(y_hat).item()}, gt: {y.item()}")
+            scene.show()
 
 
 ######################################################
@@ -163,7 +188,8 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
         feat_sigma=0.025,
         feat_n_opt_pts=500,
         feat_n_pts=1500,
-        random_opening_pose_scaling=0.9
+        random_opening_pose_scaling=0.9,
+        valid_mode=False
     ):
 
         # params
@@ -183,6 +209,7 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
         self.debug = debug
         self.num_pos_poses = num_pos_poses
         self.num_neg_poses = num_neg_poses
+        self.valid_mode = valid_mode
 
         self.obj_paths = []
         self.obj_path_to_data = {}
@@ -253,6 +280,7 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
         top_mask = pcd[:, 1] > y_max - y_range * self.top_scale_ratio
 
         return pcd, top_mask
+
     def get_raw_data(self, idx):
         """
         retrieve one data point
@@ -282,7 +310,7 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
             else:
                 pose = self.random_pose(pcd, semantic_mask)
 
-        if self.debug:
+        if self.debug or self.valid_mode:
             shape_pcd = trimesh.PointCloud(pcd)
             semantic_pcd = trimesh.PointCloud(pcd_semantic)
             semantic_pcd.colors = np.tile((255, 0, 0), (semantic_pcd.vertices.shape[0], 1))
@@ -295,7 +323,8 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
             )
             scene = trimesh.Scene()
             scene.add_geometry([shape_pcd, local_frame_positive, semantic_pcd])
-            scene.show()
+            if self.debug:
+                scene.show()
 
         # sample query points
         query_pts = np.random.normal(
@@ -312,6 +341,9 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
 
         # put all the input data in a dictionary
         datum = {"coords": ref_query_pts, "point_cloud": ref_shape_pcd}
+
+        if self.valid_mode:
+            return datum, torch.FloatTensor([label]), scene
 
         return datum, torch.FloatTensor([label])
 
@@ -613,7 +645,7 @@ def load_objects(model, obj_model_path, device="cpu", visualize=False):
 
 
 if __name__ == "__main__":
-    train_mlp()
+    train_mlp("valid", max_epochs=1, checkpoint_path="/home/weiyu/Research/ndf_robot/src/ndf_robot/eval/lightning_logs/version_0/checkpoints/epoch=0-step=539.ckpt")
 
     # device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     # model_path = osp.join(path_util.get_ndf_model_weights(), 'multi_category_weights.pth')
