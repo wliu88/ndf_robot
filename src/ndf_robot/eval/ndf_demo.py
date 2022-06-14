@@ -15,6 +15,7 @@ import os
 os.environ["NDF_SOURCE_DIR"] = ".."
 os.environ["PB_PLANNING_SOURCE_DIR"] = "../../pybullet-planning"
 
+
 if __name__ == '__main__':
     parser  = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=0)

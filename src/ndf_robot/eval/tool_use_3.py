@@ -1,4 +1,3 @@
-import os
 import os.path as osp
 import torch
 import numpy as np
@@ -10,25 +9,29 @@ from scipy.spatial.transform import Rotation
 from collections import defaultdict
 from tqdm import tqdm
 
-import torch
-from torch import nn
-from torch.utils.data import DataLoader
-import pytorch_lightning as pl
-
 from ndf_robot.utils import path_util
 import ndf_robot.model.vnn_occupancy_net_pointnet_dgcnn as vnn_occupancy_network
 from ndf_robot.eval.ndf_alignment import NDFAlignmentCheck
 import ndf_robot.utils.transformations as tra
 from ndf_robot.utils import torch_util, trimesh_util
+
+from sklearn import svm
 from sklearn.metrics import classification_report
+
+
+import os
 
 os.environ["NDF_SOURCE_DIR"] = ".."
 os.environ["PB_PLANNING_SOURCE_DIR"] = "../../pybullet-planning"
 
+######################################################
+import os
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+import pytorch_lightning as pl
 
-####################################################################################################
-# NDFClassifier class
-####################################################################################################
+
 class NDFClassifier(pl.LightningModule):
     def __init__(self, model_path):
         super().__init__()
@@ -60,7 +63,6 @@ class NDFClassifier(pl.LightningModule):
             reference_act_hat = self.ndf_model.forward_latent(
                 reference_latent, x["coords"]
             )
-            # ToDo: try other pooling methods for creating pose feature
             reference_act_hat = torch.mean(reference_act_hat, dim=1)
 
         y_hat = self.layers(reference_act_hat)
@@ -104,10 +106,8 @@ class NDFClassifier(pl.LightningModule):
         return optimizer
 
 
-####################################################################################################
-# Functions for training an MLP and splitting the dataset into training and validation splits
-####################################################################################################
 def train_mlp(mode, random_seed=42, checkpoint_path=None, max_epochs=5):
+
     device = (
         torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     )
@@ -152,40 +152,16 @@ def train_mlp(mode, random_seed=42, checkpoint_path=None, max_epochs=5):
             print(f"\nprediction: {torch.sigmoid(y_hat).item()}, gt: {y.item()}")
             scene.show()
 
-        # labels = []
-        # predictions = []
-        # for x, y, _ in tqdm(val_dataset):
-        #     for k in x:
-        #         x[k] = x[k].to(device).unsqueeze(0)
-        #     with torch.no_grad():
-        #         y_hat = model(x)
-        #     y_hat = y_hat[0]
-        #     labels.append(y.cpu().numpy()[0])
-        #     predictions.append(y_hat.cpu().numpy()[0] > 0.5)
-        # print(labels)
-        # print(predictions)
-        # print(classification_report(labels, predictions))
 
-####################################################################################################
-# Dataloader
-####################################################################################################
+######################################################
+
+
 def split_objects(
-        object_base_dir=path_util.get_ndf_obj_descriptions(), train_ratio=0.7
+    object_base_dir=path_util.get_ndf_obj_descriptions(), train_ratio=0.7
 ):
-    """
-    Splits all items in a directory into a training set and a validation set based on a ratio
-    
-    params:
-    - object_base_dir: The directory containing the class subdirectories
-    - train_ratio: The ratio of objects that goes to the training split 
-
-    returns:
-    - train_obj_models: a list of the models in the training split
-    - val_obj_models: a list of the models in the validation split
-    """
     all_obj_models = []
     for obj_class in os.listdir(object_base_dir):
-        if "mug_centered_obj_normalized" in obj_class:
+        if "centered_obj_normalized" in obj_class:
             for obj_model in os.listdir(os.path.join(object_base_dir, obj_class)):
                 all_obj_models.append(obj_model)
     # print(all_obj_models)
@@ -198,22 +174,22 @@ def split_objects(
 
 class SemanticPoseDataset(torch.utils.data.Dataset):
     def __init__(
-            self,
-            split_obj_models=None,
-            object_base_dir=path_util.get_ndf_obj_descriptions(),
-            debug=False,
-            semantic_type="bottom",
-            num_pos_poses=3,
-            num_neg_poses=3,
-            random_noise_sigma=0.001,
-            bottom_scale_ratio=0.01,
-            top_scale_ratio=0.05,
-            scale=0.25,
-            feat_sigma=0.025,
-            feat_n_opt_pts=500,
-            feat_n_pts=1500,
-            random_opening_pose_scaling=0.9,
-            valid_mode=False
+        self,
+        split_obj_models=None,
+        object_base_dir=path_util.get_ndf_obj_descriptions(),
+        debug=False,
+        semantic_type="bottom",
+        num_pos_poses=3,
+        num_neg_poses=3,
+        random_noise_sigma=0.001,
+        bottom_scale_ratio=0.01,
+        top_scale_ratio=0.05,
+        scale=0.25,
+        feat_sigma=0.025,
+        feat_n_opt_pts=500,
+        feat_n_pts=1500,
+        random_opening_pose_scaling=0.9,
+        valid_mode=False
     ):
 
         # params
@@ -276,16 +252,6 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
             self.obj_path_to_data[obj_path]["semantic_mask"] = semantic_mask
 
     def get_obj_pcd_and_bottom_mask(self, obj_model_path):
-        """
-        Creates a pcd from an object and creates a mask of some portion of the bottom of the object defined by self.bottom_scale_ratio
-        
-        params:
-        - object_model_path: path to an object file
-
-        returns:
-        - pcd: a pointcloud of the object
-        - bottom_mask: a mask of all points within the bottom portion of the pcd based on self.bottom_scale ratio
-        """
 
         mesh = trimesh.load(obj_model_path, process=False)
         mesh.apply_scale(self.scale)
@@ -301,16 +267,6 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
         return pcd, bottom_mask
 
     def get_obj_pcd_and_top_mask(self, obj_model_path):
-        """
-        Creates a pcd from an object and creates a mask of some portion of the top of the object defined by self.top_scale_ratio
-        
-        params:
-        - object_model_path: path to an object file
-
-        returns:
-        - pcd: a pointcloud of the object
-        - top_mask: a mask of all points within the top portion of the pcd based on self.top_scale ratio
-        """
 
         mesh = trimesh.load(obj_model_path, process=False)
         mesh.apply_scale(self.scale)
@@ -328,13 +284,8 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
     def get_raw_data(self, idx):
         """
         retrieve one data point
-        
-        params: 
-        - idx: the index of the desired datapoint
-
-        returns:
-        - datum: a dictionary containing 'coords', the reference query points, and 'point_cloud', the object point cloud
-        - label: a torch tensor containing the label of the data point (0 for negative examples, 1 for positive examples)
+        :param idx:
+        :return:
         """
 
         obj_path, label = self.data[idx]
@@ -352,12 +303,12 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
             pose[:3, 3] = pcd_semantic[np.random.choice(list(range(len(pcd_semantic)))), :]
             pose[:3, 3] += np.random.normal(scale=self.random_noise_sigma, size=3)
         elif self.semantic_type == "bottom":
-            pose = self.random_negative_pose(pcd, semantic_mask)
+            pose = self.random_pose(pcd, semantic_mask)
         elif self.semantic_type == "top":
             if np.random.uniform() > 0.5 and obj_class != "bottle_centered_obj_normalized":
                 pose = self.random_opening_pose(pcd, semantic_mask)
             else:
-                pose = self.random_negative_pose(pcd, semantic_mask)
+                pose = self.random_pose(pcd, semantic_mask)
 
         if self.debug or self.valid_mode:
             shape_pcd = trimesh.PointCloud(pcd)
@@ -396,63 +347,28 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
 
         return datum, torch.FloatTensor([label])
 
-    def random_negative_pose(self, pcd, semantic_mask):
-        '''
-        Samples a random point from the pcd outside of a region defined by the semantic_mask, then combines that with a random transformation to create a negative example pose based on the semantic_mask.
-        
-        params:
-        - pcd: a pointcloud to be sampled from for a random point
-        - semantic_mask: a mask defining an area to be excluded from the sampling for a random index
-
-        returns:
-        - pose: a pose generated from a random sampling of points and a random transformation
-        '''
-
+    def random_pose(self, pcd, semantic_mask):
         random_idx = np.random.randint(pcd[~semantic_mask].shape[0])
         random_pos = pcd[~semantic_mask][random_idx]
         random_pose = tra.random_rotation_matrix()
         random_pose[:3, 3] = random_pos
         pose = random_pose
         return pose
-
-    def random_pose(self, pcd):
-        '''
-        Samples a random point within a bounding box around a pointcloud
-        
-        params:
-        - pcd: a pointcloud used to establish bounds to sample a random point from
-        '''
-        minimums = np.min(pcd, axis=0)
-        maximums = np.max(pcd, axis=0)
-        random_pos = np.random.uniform(low=minimums, high=maximums)
-        random_pose = tra.random_rotation_matrix()
-        random_pose[:3, 3] = random_pos
-        pose = random_pose
-        return pose
-
+    
     def random_opening_pose(self, pcd, semantic_mask):
-        '''
-        Samples a random point in the opening of the object as described by the semantic_mask, using an angle and the diameter of the opening.
-        
-        params:
-        - pcd: a pointcloud to be sampled from for the opening
-        - semantic_mask: a mask defining the location of the of the opening of the object
-
-        returns:
-        - pose: a random pose located within the opening of the object
-        '''
         scaling = self.random_opening_pose_scaling
         height = np.mean(pcd[semantic_mask], axis=0)[1]
         x_min, x_max = np.min(pcd[semantic_mask], axis=0)[0], np.max(pcd[semantic_mask], axis=0)[0]
-
+        
         random_angle = np.random.uniform(low=-np.pi, high=np.pi)
-        random_dist = np.random.uniform(low=x_min * scaling, high=x_max * scaling)
-        x_perturb, z_perturb = random_dist * np.cos(random_angle), random_dist * np.sin(random_angle)
-
-        random_pos = np.array([x_perturb, height, z_perturb])
+        random_dist = np.random.uniform(low=x_min*scaling, high=x_max*scaling)
+        x_perturb, z_perturb = random_dist*np.cos(random_angle), random_dist*np.sin(random_angle)
+        
+        random_pos = np.array([x_perturb, height ,z_perturb])
         random_pose = tra.random_rotation_matrix()
         random_pose[:3, 3] = random_pos
         return random_pose
+
 
     def __getitem__(self, idx):
 
@@ -463,6 +379,7 @@ class SemanticPoseDataset(torch.utils.data.Dataset):
 
 
 def build_simple_semantic_classifier():
+
     device = (
         torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     )
@@ -491,18 +408,18 @@ def build_simple_semantic_classifier():
         input("here")
 
 
-####################################################################################################
-# Testing functions
-####################################################################################################
+#####################################################################################################
+
 
 def sample_bottom_pose(
-        pcd,
-        mesh,
-        num_poses=1,
-        bottom_scale_ratio=0.01,
-        random_noise_sigma=0.001,
-        visualize=False,
+    pcd,
+    mesh,
+    num_poses=1,
+    bottom_scale_ratio=0.01,
+    random_noise_sigma=0.001,
+    visualize=False,
 ):
+
     bounds = mesh.bounding_box.bounds
     y_min, y_max = bounds[:, 1]
     x_range, y_range, z_range = bounds[1, :] - bounds[0, :]
@@ -536,13 +453,14 @@ def sample_bottom_pose(
 
 
 def sample_top_pose(
-        pcd,
-        mesh,
-        num_poses=1,
-        top_scale_ratio=0.05,
-        random_noise_sigma=0.001,
-        visualize=False,
+    pcd,
+    mesh,
+    num_poses=1,
+    top_scale_ratio=0.05,
+    random_noise_sigma=0.001,
+    visualize=False,
 ):
+
     bounds = mesh.bounding_box.bounds
     y_min, y_max = bounds[:, 1]
     x_range, y_range, z_range = bounds[1, :] - bounds[0, :]
@@ -576,6 +494,7 @@ def sample_top_pose(
 
 
 def sample_random_pose(pcd, mask, num_poses=1, visualize=False):
+
     # create negative example
     poses = []
     for i in range(num_poses):
@@ -601,19 +520,62 @@ def sample_random_pose(pcd, mask, num_poses=1, visualize=False):
     return poses
 
 
-def sample_opening_pose(pcd, mask, num_poses=1, scaling=0.9, visualize=False):
+def sample_opening_pose(pcd, mask, center_radius=None, num_poses=1, scaling=0.9, visualize=False):
+
+    height = np.mean(pcd[mask], axis=0)[1]
+    x_max = np.max(pcd[mask], axis=0)[0] * scaling
+
     # create negative example
     poses = []
     for i in range(num_poses):
-        height = np.mean(pcd[mask], axis=0)[1]
-        x_min, x_max = np.min(pcd[mask], axis=0)[0], np.max(pcd[mask], axis=0)[0]
 
         random_angle = np.random.uniform(low=-np.pi, high=np.pi)
-        random_dist = np.random.uniform(low=x_min * scaling, high=x_max * scaling)
-        x_perturb, z_perturb = random_dist * np.cos(random_angle), random_dist * np.sin(random_angle)
-
+        # if center_radius is specified, excluding the center region
+        random_dist = np.random.uniform(low=center_radius if center_radius else 0, high=x_max)
+        x_perturb, z_perturb = random_dist*np.cos(random_angle), random_dist*np.sin(random_angle)
+        
         random_pos = np.array([x_perturb, height, z_perturb])
         random_pose = tra.random_rotation_matrix()
+        random_pose[:3, 3] = random_pos
+
+        poses.append(random_pose)
+
+        if visualize:
+            shape_pcd = trimesh.PointCloud(pcd)
+            center_region_vis_transform = tra.euler_matrix(np.pi/2, 0, 0)
+            center_region_vis_transform[1, 3] += height
+            center_region_vis = trimesh.creation.cylinder(radius=center_radius, height=0.005, transform=center_region_vis_transform)
+            local_frame_negative = trimesh.creation.axis(
+                origin_size=0.002,
+                transform=random_pose,
+                origin_color=None,
+                axis_radius=0.002,
+                axis_length=0.05,
+            )
+            scene = trimesh.Scene()
+            scene.add_geometry([shape_pcd, local_frame_negative, center_region_vis])
+            scene.show()
+
+    return poses
+
+
+def sample_center_opening_pose(pcd, mask, num_poses=1, scaling=0.2, visualize=False):
+
+    height = np.mean(pcd[mask], axis=0)[1]
+    center_radius = np.max(pcd[mask], axis=0)[0] * scaling
+
+    # create negative example
+    poses = []
+    for i in range(num_poses):
+
+        random_angle = np.random.uniform(low=-np.pi, high=np.pi)
+        random_dist = np.random.uniform(low=0, high=center_radius)
+        x_perturb, z_perturb = random_dist * np.cos(random_angle), random_dist * np.sin(random_angle)
+
+        height_perturb = height + np.random.uniform(low=-center_radius, high=center_radius)
+
+        random_pos = np.array([x_perturb, height_perturb, z_perturb])
+        random_pose = tra.euler_matrix(0, np.random.uniform(high=np.pi * 2), 0)
         random_pose[:3, 3] = random_pos
 
         poses.append(random_pose)
@@ -631,19 +593,58 @@ def sample_opening_pose(pcd, mask, num_poses=1, scaling=0.9, visualize=False):
             scene.add_geometry([shape_pcd, local_frame_negative])
             scene.show()
 
-    return poses
+    return poses, center_radius
+
+
+def sample_negative_top_pose(pcd, mask, center_x_bounds, num_poses=1, scaling=0.2, visualize=False):
+
+    height = np.mean(pcd[mask], axis=0)[1]
+    x_min, x_max = np.min(pcd[mask], axis=0)[0], np.max(pcd[mask], axis=0)[0]
+    center_x_bounds = (x_min * scaling, x_max * scaling)
+
+    # create negative example
+    poses = []
+    for i in range(num_poses):
+
+        random_angle = np.random.uniform(low=-np.pi, high=np.pi)
+        random_dist = np.random.uniform(low=center_x_bounds[0], high=center_x_bounds[1])
+        x_perturb, z_perturb = random_dist * np.cos(random_angle), random_dist * np.sin(random_angle)
+
+        height_perturb = height + np.random.uniform(low=center_x_bounds[0], high=center_x_bounds[1])
+
+        random_pos = np.array([x_perturb, height_perturb, z_perturb])
+        random_pose = tra.euler_matrix(0, np.random.uniform(high=np.pi * 2), 0)
+        random_pose[:3, 3] = random_pos
+
+        poses.append(random_pose)
+
+        if visualize:
+            shape_pcd = trimesh.PointCloud(pcd)
+            local_frame_negative = trimesh.creation.axis(
+                origin_size=0.002,
+                transform=random_pose,
+                origin_color=None,
+                axis_radius=0.002,
+                axis_length=0.05,
+            )
+            scene = trimesh.Scene()
+            scene.add_geometry([shape_pcd, local_frame_negative])
+            scene.show()
+
+    return poses, center_x_bounds
 
 
 def compute_pose_feature(
-        model,
-        pcd,
-        pose,
-        sigma=0.025,
-        n_opt_pts=500,
-        n_pts=1500,
-        device="cpu",
-        visualize=False,
+    model,
+    pcd,
+    pose,
+    sigma=0.025,
+    n_opt_pts=500,
+    n_pts=1500,
+    device="cpu",
+    visualize=False,
 ):
+
     # sample query points
     query_pts = np.random.normal(0.0, sigma, size=(n_opt_pts, 3))
 
@@ -683,6 +684,7 @@ def compute_pose_feature(
 
 
 def load_objects(model, obj_model_path, device="cpu", visualize=False):
+
     scale1 = 0.25
     mesh1 = trimesh.load(obj_model_path, process=False)
     mesh1.apply_scale(scale1)
@@ -693,7 +695,7 @@ def load_objects(model, obj_model_path, device="cpu", visualize=False):
     #     pcd1, mesh1, num_poses=3, visualize=visualize
     # )
 
-    pos_poses, top_mask = sample_top_pose(pcd1, mesh1, num_poses=3, visualize=visualize)
+    pos_poses, top_mask = sample_top_pose(pcd1,mesh1, num_poses=3, visualize=visualize)
     # ToDo: add hard examples where only orientations are wrong
     # ToDo: add hard examples where only positions are wrong
     # neg_poses = sample_random_pose(pcd1, bottom_mask, num_poses=3, visualize=visualize)
@@ -726,32 +728,8 @@ def load_objects(model, obj_model_path, device="cpu", visualize=False):
     print(neg_dists)
 
 
-####################################################################################################
-# Main method
-####################################################################################################
-
 if __name__ == "__main__":
-
-    train, test = split_objects()
-    print(len(train))
-
-    # train_mlp("valid", max_epochs=1,
-    #           checkpoint_path="/home/weiyu/Research/ndf_robot/src/ndf_robot/eval/lightning_logs/version_0/checkpoints/epoch=0-step=539.ckpt")
-
-    # object_base_dir = path_util.get_ndf_obj_descriptions()
-    # for obj_class in os.listdir(object_base_dir):
-    #     if "centered_obj_normalized" in obj_class:
-    #         for obj_model in os.listdir(os.path.join(object_base_dir, obj_class)):
-    #             obj_path = os.path.join(
-    #                 object_base_dir,
-    #                 obj_class,
-    #                 obj_model,
-    #                 "models/model_normalized.obj",
-    #             )
-    #             mesh = trimesh.load(obj_path, process=False)
-    #             # mesh.apply_scale(0.25)
-    #             print(mesh.bounding_box.bounds)
-    #             input("next?")
+    # train_mlp("valid", max_epochs=1, checkpoint_path="/home/weiyu/Research/ndf_robot/src/ndf_robot/eval/lightning_logs/version_0/checkpoints/epoch=0-step=539.ckpt")
 
     # device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     # model_path = osp.join(path_util.get_ndf_model_weights(), 'multi_category_weights.pth')
@@ -759,25 +737,35 @@ if __name__ == "__main__":
     #                                         sigmoid=True).to(device)
     # model.load_state_dict(torch.load(model_path))
 
-    # # print(path_util.get_ndf_obj_descriptions())
-    # object_base_dir = path_util.get_ndf_obj_descriptions()
-    # class_to_obj_paths = defaultdict(list)
-    # for obj_class in os.listdir(object_base_dir):
-    #     if "centered_obj_normalized" in obj_class:
-    #         for obj_model in os.listdir(os.path.join(object_base_dir, obj_class)):
-    #             class_to_obj_paths[obj_class].append(os.path.join(object_base_dir, obj_class, obj_model, "models/model_normalized.obj"))
+    # print(path_util.get_ndf_obj_descriptions())
+    object_base_dir = path_util.get_ndf_obj_descriptions()
+    class_to_obj_paths = defaultdict(list)
+    for obj_class in os.listdir(object_base_dir):
+        if "centered_obj_normalized" in obj_class:
+            for obj_model in os.listdir(os.path.join(object_base_dir, obj_class)):
+                class_to_obj_paths[obj_class].append(os.path.join(object_base_dir, obj_class, obj_model, "models/model_normalized.obj"))
 
-    # for obj_class in class_to_obj_paths:
-    #     # print(obj_class, len(class_to_obj_paths[obj_class]))
-    #     # load_objects(class_to_obj_paths[obj_class][0])
-    #     print(obj_class)
-    #     if obj_class == "bowl_centered_obj_normalized":
-    #         count = 0
-    #         for obj_path in class_to_obj_paths[obj_class]:
-    #             # print(obj_path)
-    #             load_objects(model, obj_path, device, visualize=True)
-    #             count += 1
-    #             # if count == 1:
-    #                 # break
+    for obj_class in class_to_obj_paths:
+        # print(obj_class, len(class_to_obj_paths[obj_class]))
+        # load_objects(class_to_obj_paths[obj_class][0])
+        print(obj_class)
+        if obj_class == "bowl_centered_obj_normalized":
+            count = 0
+            for obj_path in class_to_obj_paths[obj_class]:
 
-    #     # break
+                scale1 = 0.25
+                mesh1 = trimesh.load(obj_path, process=False)
+                mesh1.apply_scale(scale1)
+                # convert to pc
+                pcd1 = mesh1.sample(5000)
+                _, top_mask = sample_top_pose(pcd1, mesh1, num_poses=0)
+                pos_poses, center_radius = sample_center_opening_pose(pcd1, top_mask, scaling=0.2, num_poses=5, visualize=True)
+                neg_poses = sample_opening_pose(pcd1, top_mask, center_radius=center_radius, num_poses=5, scaling=0.9, visualize=True)
+
+                # print(obj_path)
+                # load_objects(model, obj_path, device, visualize=True)
+                count += 1
+                # if count == 1:
+                    # break
+
+        # break
